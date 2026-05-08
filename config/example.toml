@@ -1,0 +1,10 @@
+[vault]
+name = "example"
+mount_point = "/mnt/virtualvaultfs"
+
+[storage]
+root = "./vault-data"
+objects = "objects"
+
+[database]
+path = "./vault-data/metadata.sqlite3"
