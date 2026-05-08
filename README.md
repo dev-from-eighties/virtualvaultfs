@@ -29,10 +29,10 @@ Visual map:
   .gocrypt_source_dir
 
   - .vvault: lives in gocrypt_mounted_dir, preferable at the root. Stores files
-    in vault-data/objects/{id-digits}.blob, stores full filenames in metadata.
-    sqlite3, also subdirs and symlinks, they don't exist physically and are only
-    usable when mounting. symlinks are actually files, but they reference the
-    expanded path, only usable when mounted.
+    in vault-data/objects/{id-digits}.blob, stores full filenames in
+    metadata.sqlite3, also subdirs and symlinks, they don't exist physically and
+    are only usable when mounting. symlinks are actually files, but they
+    reference the expanded path, only usable when mounted.
 
   - vvault_mounted_dir: display full filenames correctly. Share this on SMB or
     NFS. It displays files with their original filename, no matter how long
@@ -123,7 +123,7 @@ ctest --test-dir build/debug --output-on-failure
 
 ## Usage
 
-Firs create an empty directory and initialize it:
+First create an empty directory and initialize it:
 
 ```sh
 mkdir /path/to/.vvault
