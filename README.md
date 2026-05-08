@@ -139,6 +139,15 @@ Then mount:
 virtualvaultfs mount /path/to/.vvault /path/to/vvault_mountpoint 
 ```
 
+It won't return. It won't print "OK". You will see debug output like filesystem
+operations: access, create, open, etc, as they happen. This is very useful on
+this first iteration of the project.
+
+If you exit with CTRL+C you lose the mount.
+
+To leave it running in the background you have options: use & at the end of
+the command, or use tmux.
+
 Do not kill the process, vvault_mountpoint will remain in invalid state and not
 mountable again. Use CTRL+C to exit gracefully, it will unmount.
 
