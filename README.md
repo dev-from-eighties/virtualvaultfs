@@ -25,12 +25,19 @@ Visual map:
 
 - .gocrypt_source_dir: non usable filenames and file contents.
 
-- gocrypt_mounted_dir: displayable ok in file browsers, writes to .gocrypt_source_dir
+- gocrypt_mounted_dir: displayable ok in file browsers, writes to 
+  .gocrypt_source_dir
 
-  - .vvault: lives in gocrypt_mounted_dir, preferable at the root. Stores files in vault-data/objects/{id-digits}.blob, stores full filenames in metadata.sqlite3, also subdirs and symlinks, they don't exist physically and are only usable when mounting.
+  - .vvault: lives in gocrypt_mounted_dir, preferable at the root. Stores files
+    in vault-data/objects/{id-digits}.blob, stores full filenames in metadata.
+    sqlite3, also subdirs and symlinks, they don't exist physically and are only
+    usable when mounting. symlinks are actually files, but they reference the
+    expanded path, only usable when mounted.
 
-  - vvault_mounted_dir: display full filenames correctly. Share this on SMB or NFS. It displays files with their original filename, no matter how long their
-  path is, subdirectories and symlinks are usable and displayed correctly.
+  - vvault_mounted_dir: display full filenames correctly. Share this on SMB or
+    NFS. It displays files with their original filename, no matter how long
+    their path is, subdirectories and symlinks are usable and displayed
+    correctly.
 
 Note that .vvault directory should live inside gocrypt_mounted_dir, but
 vvault_mounted_dir can be anywhere. You are still encrypting files stored there.
@@ -84,7 +91,7 @@ cd into project root directory and run:
 Note for Ubuntu 22.04.
 
 While Ubuntu 24.04 and newer compile with just the dependencies listed above,
-this project requires "CMAKE_CXX_STANDARD 20", in particular we love <format>.
+this project requires "CMAKE_CXX_STANDARD 20", in particular we love %lt;format%gt;.
 
 Ubuntu 22.04 default compiler doesn't support 20 standard fully. So it will miss
 includes.
