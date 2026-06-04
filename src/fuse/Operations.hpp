@@ -26,7 +26,7 @@ public:
     void truncate(const vfs::Node& node, std::int64_t size, const vfs::FileHandle* handle = nullptr);
     void chmod(const vfs::Node& node, std::int64_t mode);
     void chown(const vfs::Node& node, std::int64_t uid, std::int64_t gid);
-    bool access(const vfs::Node& node, int mask) const;
+    bool access(const vfs::Node& node, int mask, std::int64_t uid, std::int64_t gid) const;
     void rename(std::int64_t nodeId, std::int64_t newParentId, const std::string& newName);
     bool renameReplace(std::int64_t nodeId, std::int64_t newParentId, const std::string& newName);
     bool unlink(std::int64_t nodeId, bool removeObject);

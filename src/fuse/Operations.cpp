@@ -234,20 +234,16 @@ void Operations::chown(const vfs::Node& node, std::int64_t uid, std::int64_t gid
     nodes_.updateNode(updated);
 }
 
-bool Operations::access(const vfs::Node& node, int mask) const
+bool Operations::access(const vfs::Node& node, int mask, std::int64_t uid, std::int64_t gid) const
 {
-    if (node.type == vfs::NodeType::File && !node.objectRelpath.empty()) {
-        return ::access(objects_.pathFor(node.objectRelpath).c_str(), mask) == 0;
-    }
-
-    if (mask == F_OK || geteuid() == 0) {
+    if (mask == F_OK || uid == 0) {
         return true;
     }
 
     int shift = 0;
-    if (static_cast<std::int64_t>(geteuid()) == node.uid) {
+    if (uid == node.uid) {
         shift = 6;
-    } else if (static_cast<std::int64_t>(getegid()) == node.gid) {
+    } else if (gid == node.gid) {
         shift = 3;
     }
 
@@ -325,6 +321,12 @@ std::optional<vfs::Node> Operations::create(std::int64_t parentId, const std::st
         // Try to create a new blob object in filesystem.
         relpath = std::format("{}.blob", object_id);
         auto fh = objects_.create(relpath, static_cast<int>(mode));
+        if (::fchown(fh.fd(), static_cast<uid_t>(uid), static_cast<gid_t>(gid)) != 0) {
+            throw util::Error(std::string{"chown failed: "} + std::strerror(errno));
+        }
+        if (::fchmod(fh.fd(), static_cast<mode_t>(mode)) != 0) {
+            throw util::Error(std::string{"chmod failed: "} + std::strerror(errno));
+        }
 
         // object blob exists in filesystem at this time, update relpath in objects table on database
         nodes_.updateObject(object_id, relpath, 0);

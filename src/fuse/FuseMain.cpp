@@ -51,6 +51,12 @@ struct ParentAndName {
     std::string name;
 };
 
+struct CallerContext {
+    std::int64_t uid;
+    std::int64_t gid;
+    mode_t umask;
+};
+
 struct FuseContext {
     db::Database database;
     vfs::NodeStore nodes;
@@ -69,6 +75,29 @@ struct FuseContext {
 Operations& currentOperations()
 {
     return *static_cast<Operations*>(fuse_get_context()->private_data);
+}
+
+CallerContext currentCallerContext()
+{
+    const auto* ctx = fuse_get_context();
+    if (ctx == nullptr) {
+        return {
+            .uid = static_cast<std::int64_t>(getuid()),
+            .gid = static_cast<std::int64_t>(getgid()),
+            .umask = 0,
+        };
+    }
+
+    return {
+        .uid = static_cast<std::int64_t>(ctx->uid),
+        .gid = static_cast<std::int64_t>(ctx->gid),
+        .umask = ctx->umask,
+    };
+}
+
+std::int64_t initialMode(mode_t mode, mode_t callerUmask)
+{
+    return static_cast<std::int64_t>((mode & ~callerUmask) & 07777);
 }
 
 int exceptionToErrno()
@@ -236,7 +265,8 @@ static int vv_mkdir(const char* path, mode_t mode)
     }
 
     try {
-        operations.mkdir(parent->id, parsed->name, static_cast<std::int64_t>(mode & 07777), getuid(), getgid());
+        const auto caller = currentCallerContext();
+        operations.mkdir(parent->id, parsed->name, initialMode(mode, caller.umask), caller.uid, caller.gid);
     } catch (...) {
         return exceptionToErrno();
     }
@@ -333,12 +363,13 @@ static int vv_create(const char* path, mode_t mode, struct fuse_file_info* fi)
     }
 
     try {
+        const auto caller = currentCallerContext();
         const auto node = operations.create(
             parent->id,
             parsed->name,
-            static_cast<std::int64_t>(mode & 07777),
-            getuid(),
-            getgid());
+            initialMode(mode, caller.umask),
+            caller.uid,
+            caller.gid);
         if (!node.has_value()) {
             return -ENOENT;
         }
@@ -386,7 +417,8 @@ static int vv_symlink(const char* target, const char* path)
     }
 
     try {
-        const auto node = operations.symlink(parent->id, parsed->name, target, getuid(), getgid());
+        const auto caller = currentCallerContext();
+        const auto node = operations.symlink(parent->id, parsed->name, target, caller.uid, caller.gid);
         if (!node.has_value()) {
             return -ENOENT;
         }
@@ -699,7 +731,8 @@ static int vv_access(const char* path, int mask)
         return -ENOENT;
     }
 
-    return operations.access(*node, mask) ? 0 : -EACCES;
+    const auto caller = currentCallerContext();
+    return operations.access(*node, mask, caller.uid, caller.gid) ? 0 : -EACCES;
 }
 
 static int vv_chmod(const char* path, mode_t mode, struct fuse_file_info* fi)
