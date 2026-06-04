@@ -72,6 +72,18 @@ accessing and writing files to a shared directory mounted server side with
 virtualvaultfs without any issue.
 
 
+## Current issues
+
+Low performance when copying many small files, like .git directories, specially
+noticeable on HDDs. SSDs hide the problem at some level.
+
+This was always expected. Each file creation requires a query to the SQLite DB.
+
+To fix this, we will implement RAM cache of recently accessed directory
+structures. This will prevent SQL compilation. Changes will be committed to the
+DB in time.
+
+
 ## Build
 
 Make sure you have all dependencies:
