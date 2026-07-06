@@ -1,5 +1,26 @@
 # virtualvaultfs
 
+STOP!!!
+
+This project is deprecated and author switched to a better strategy: check personalfs
+
+Why? virtualvaultfs has a big transactional pressure on you CPU and storage device.
+This results in directories containing tens of thousands of small files copying
+very slow compared with any other filesystem.
+
+personalfs has a very tiny wrapper in comparison, that put minimal extra pressure
+and needs no database. personalfs was tested with many github repos, with tens of
+thousands of tiny files, and it performs similar to real fs.
+
+A personalfs mountpoint resets path length, so anything you may want to put inside
+will surely fit without requiring renaming.
+
+You should use personalfs.
+
+--------
+
+Original readme:
+
 Ever suffered from this? You setup a gocryptfs/eCryptfs directory and start
 copying your assets or your private client data, and then run out of path
 length.

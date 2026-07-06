@@ -5,6 +5,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <csignal>
 #include <ctime>
@@ -14,6 +15,7 @@
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+#include <vector>
 
 #define VV_FUSE_FILL_DIR_DEFAULTS static_cast<fuse_fill_dir_flags>(0)
 
@@ -71,6 +73,8 @@ struct FuseContext {
     {
     }
 };
+
+Operations* fusePrivateData = nullptr;
 
 Operations& currentOperations()
 {
@@ -184,6 +188,11 @@ vfs::FileHandle& fileHandle(struct fuse_file_info* fi)
     return *reinterpret_cast<vfs::FileHandle*>(fi->fh);
 }
 
+const char* printablePath(const char* path)
+{
+    return path == nullptr ? "<null>" : path;
+}
+
 } // namespace
 
 static int vv_getattr(const char* path, struct stat* st, struct fuse_file_info* fi)
@@ -238,6 +247,12 @@ static int vv_readdir(
     }
 
     return 0;
+}
+
+static int vv_mknod(const char* path, mode_t mode, dev_t rdev)
+{
+    util::Logger::info(std::format("mknod: {} mode={:o} rdev={}", printablePath(path), mode, rdev));
+    return -EOPNOTSUPP;
 }
 
 static int vv_mkdir(const char* path, mode_t mode)
@@ -538,7 +553,7 @@ static int vv_unlink(const char* path)
 
 static int vv_rename(const char* from, const char* to, unsigned int flags)
 {
-    util::Logger::info(std::format("rename: {} -> {}", from, to));
+    util::Logger::info(std::format("rename: {} -> {} flags={}", printablePath(from), printablePath(to), flags));
 
     if ((flags & (RENAME_EXCHANGE | RENAME_WHITEOUT)) != 0) {
         return -EOPNOTSUPP;
@@ -608,10 +623,18 @@ static int vv_rename(const char* from, const char* to, unsigned int flags)
     return 0;
 }
 
+static int vv_link(const char* from, const char* to)
+{
+    util::Logger::info(std::format("link: {} -> {}", printablePath(from), printablePath(to)));
+    return -EOPNOTSUPP;
+}
+
 static int vv_utimens(const char* path,
                       const struct timespec tv[2],
                       struct fuse_file_info* fi)
 {
+    util::Logger::info(std::format("utimens: {}", printablePath(path)));
+
     (void)fi;
 
     auto& operations = currentOperations();
@@ -717,6 +740,136 @@ static int vv_flush(const char* path, struct fuse_file_info* fi)
     return 0;
 }
 
+static int vv_setxattr(const char* path, const char* name, const char* value, std::size_t size, int flags)
+{
+    util::Logger::info(std::format(
+        "setxattr: {} name={} size={} flags={}",
+        printablePath(path),
+        name == nullptr ? "<null>" : name,
+        size,
+        flags));
+
+    if (strcmp(name, "user.DOSATTRIB") == 0) {
+        /*
+         * Ideal: guardar value[0..size) en tu metadata.
+         * Workaround inicial: aceptar y descartar.
+         */
+        return 0;
+    }
+
+    if (strcmp(name, "system.posix_acl_access") == 0 ||
+        strcmp(name, "system.posix_acl_default") == 0) {
+        /*
+         * Mejor a largo plazo: soportar ACLs.
+         * Para probar compatibilidad, puedes aceptar como no-op.
+         */
+        return 0;
+    }
+
+    return -ENOTSUP;
+}
+
+static int vv_getxattr(const char* path, const char* name, char* value, std::size_t size)
+{
+    util::Logger::info(std::format(
+        "getxattr: {} name={} size={}",
+        printablePath(path),
+        name == nullptr ? "<null>" : name,
+        size));
+
+    if (strcmp(name, "user.DOSATTRIB") == 0) {
+        const char *dos = "0x20"; // ARCHIVE, valor razonable por defecto
+
+        if (size == 0)
+            return strlen(dos);
+
+        if (size < strlen(dos))
+            return -ERANGE;
+
+        memcpy(value, dos, strlen(dos));
+        return strlen(dos);
+    }
+
+    if (strcmp(name, "system.posix_acl_access") == 0 ||
+        strcmp(name, "system.posix_acl_default") == 0) {
+        return -ENODATA; // No hay ACL almacenada
+    }
+
+    return -ENODATA;
+}
+
+static int vv_listxattr(const char* path, char* list, std::size_t size)
+{
+    util::Logger::info(std::format("listxattr: {} size={}", printablePath(path), size));
+
+    const char attrs[] = "user.DOSATTRIB\0";
+    size_t len = sizeof(attrs);
+
+    if (size == 0)
+        return len;
+
+    if (size < len)
+        return -ERANGE;
+
+    memcpy(list, attrs, len);
+    return len;
+}
+
+static int vv_removexattr(const char* path, const char* name)
+{
+    util::Logger::info(std::format(
+        "removexattr: {} name={}",
+        printablePath(path),
+        name == nullptr ? "<null>" : name));
+
+    if (strcmp(name, "user.DOSATTRIB") == 0) {
+        // borrar de metadata, o no-op temporal
+        return 0;
+    }
+
+    return -ENODATA;
+}
+
+static int vv_opendir(const char* path, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format("opendir: {}", printablePath(path)));
+
+    (void)fi;
+    return 0;
+}
+
+static int vv_releasedir(const char* path, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format("releasedir: {}", printablePath(path)));
+
+    (void)fi;
+    return 0;
+}
+
+static int vv_fsyncdir(const char* path, int datasync, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format("fsyncdir: {} datasync={}", printablePath(path), datasync));
+
+    (void)fi;
+    return 0;
+}
+
+static void* vv_init(struct fuse_conn_info* conn, struct fuse_config* cfg)
+{
+    util::Logger::info("init");
+
+    (void)conn;
+    (void)cfg;
+    return fusePrivateData;
+}
+
+static void vv_destroy(void* privateData)
+{
+    util::Logger::info("destroy");
+
+    (void)privateData;
+}
+
 static int vv_access(const char* path, int mask)
 {
     util::Logger::info(std::format("access: {} {}", path, mask));
@@ -779,6 +932,8 @@ static int vv_chown(const char* path, uid_t uid, gid_t gid, struct fuse_file_inf
 
 static int vv_statfs (const char* fs, struct statvfs* out)
 {
+    util::Logger::info(std::format("statfs: {}", printablePath(fs)));
+
     (void)fs;
     if (out == nullptr || app::config == nullptr) {
         return -EINVAL;
@@ -792,6 +947,162 @@ static int vv_statfs (const char* fs, struct statvfs* out)
     return 0;
 }
 
+static int vv_lock(const char* path, struct fuse_file_info* fi, int cmd, struct flock* lock)
+{
+    util::Logger::info(std::format("lock: {} cmd={}", printablePath(path), cmd));
+
+    (void)fi;
+    (void)lock;
+    return -EOPNOTSUPP;
+}
+
+static int vv_bmap(const char* path, std::size_t blocksize, std::uint64_t* idx)
+{
+    util::Logger::info(std::format("bmap: {} blocksize={}", printablePath(path), blocksize));
+
+    (void)idx;
+    return -EOPNOTSUPP;
+}
+
+static int vv_ioctl(const char* path, int cmd, void* arg, struct fuse_file_info* fi, unsigned int flags, void* data)
+{
+    util::Logger::info(std::format("ioctl: {} cmd={} flags={}", printablePath(path), cmd, flags));
+
+    (void)arg;
+    (void)fi;
+    (void)data;
+    return -EOPNOTSUPP;
+}
+
+static int vv_poll(const char* path, struct fuse_file_info* fi, struct fuse_pollhandle* ph, unsigned* reventsp)
+{
+    util::Logger::info(std::format("poll: {}", printablePath(path)));
+
+    (void)fi;
+    if (ph != nullptr) {
+        fuse_pollhandle_destroy(ph);
+    }
+    if (reventsp != nullptr) {
+        *reventsp = 0;
+    }
+    return -EOPNOTSUPP;
+}
+
+static int vv_write_buf(const char* path, struct fuse_bufvec* buf, off_t off, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format("write_buf: {} off={}", printablePath(path), off));
+
+    if (buf == nullptr || fi == nullptr || fi->fh == 0) {
+        return -EINVAL;
+    }
+
+    try {
+        const std::size_t size = fuse_buf_size(buf);
+        std::vector<std::byte> data(size);
+
+        fuse_bufvec dst = FUSE_BUFVEC_INIT(size);
+        dst.buf[0].mem = data.data();
+        const ssize_t copied = fuse_buf_copy(&dst, buf, static_cast<fuse_buf_copy_flags>(0));
+        if (copied < 0) {
+            return static_cast<int>(copied);
+        }
+
+        return static_cast<int>(currentOperations().write(
+            fileHandle(fi),
+            std::span<const std::byte>{data.data(), static_cast<std::size_t>(copied)},
+            off));
+    } catch (...) {
+        return exceptionToErrno();
+    }
+}
+
+static int vv_read_buf(const char* path, struct fuse_bufvec** bufp, std::size_t size, off_t off, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format("read_buf: {} size={} off={}", printablePath(path), size, off));
+
+    if (bufp == nullptr || fi == nullptr || fi->fh == 0) {
+        return -EINVAL;
+    }
+
+    try {
+        const auto data = currentOperations().read(fileHandle(fi), size, off);
+        auto* vec = static_cast<fuse_bufvec*>(std::malloc(sizeof(fuse_bufvec)));
+        if (vec == nullptr) {
+            return -ENOMEM;
+        }
+
+        *vec = FUSE_BUFVEC_INIT(data.size());
+        vec->buf[0].mem = std::malloc(data.size());
+        if (vec->buf[0].mem == nullptr && !data.empty()) {
+            std::free(vec);
+            return -ENOMEM;
+        }
+
+        if (!data.empty()) {
+            std::memcpy(vec->buf[0].mem, data.data(), data.size());
+        }
+
+        *bufp = vec;
+    } catch (...) {
+        return exceptionToErrno();
+    }
+
+    return 0;
+}
+
+static int vv_flock(const char* path, struct fuse_file_info* fi, int op)
+{
+    util::Logger::info(std::format("flock: {} op={}", printablePath(path), op));
+
+    (void)fi;
+    return -EOPNOTSUPP;
+}
+
+static int vv_fallocate(const char* path, int mode, off_t offset, off_t length, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format(
+        "fallocate: {} mode={} offset={} length={}",
+        printablePath(path),
+        mode,
+        offset,
+        length));
+
+    (void)fi;
+    return -EOPNOTSUPP;
+}
+
+static ssize_t vv_copy_file_range(
+    const char* pathIn,
+    struct fuse_file_info* fiIn,
+    off_t offsetIn,
+    const char* pathOut,
+    struct fuse_file_info* fiOut,
+    off_t offsetOut,
+    std::size_t size,
+    int flags)
+{
+    util::Logger::info(std::format(
+        "copy_file_range: {}@{} -> {}@{} size={} flags={}",
+        printablePath(pathIn),
+        offsetIn,
+        printablePath(pathOut),
+        offsetOut,
+        size,
+        flags));
+
+    (void)fiIn;
+    (void)fiOut;
+    return -EOPNOTSUPP;
+}
+
+static off_t vv_lseek(const char* path, off_t off, int whence, struct fuse_file_info* fi)
+{
+    util::Logger::info(std::format("lseek: {} off={} whence={}", printablePath(path), off, whence));
+
+    (void)fi;
+    return -EOPNOTSUPP;
+}
+
 int runFuse(int argc, char** argv)
 {
     static fuse_operations operations{};
@@ -801,6 +1112,7 @@ int runFuse(int argc, char** argv)
 
     operations.getattr = vv_getattr;
     operations.readdir = vv_readdir;
+    operations.mknod = vv_mknod;
     operations.mkdir = vv_mkdir;
     operations.rmdir = vv_rmdir;
     operations.open = vv_open;
@@ -812,17 +1124,40 @@ int runFuse(int argc, char** argv)
     operations.release = vv_release;
     operations.unlink = vv_unlink;
     operations.rename = vv_rename;
+    operations.link = vv_link;
     operations.utimens = vv_utimens;
     operations.statfs = vv_statfs;
     operations.truncate = vv_truncate;
     operations.fsync = vv_fsync;
     operations.flush = vv_flush;
+    operations.setxattr = vv_setxattr;
+    operations.getxattr = vv_getxattr;
+    operations.listxattr = vv_listxattr;
+    operations.removexattr = vv_removexattr;
+    operations.opendir = vv_opendir;
+    operations.releasedir = vv_releasedir;
+    operations.fsyncdir = vv_fsyncdir;
+    operations.init = vv_init;
+    operations.destroy = vv_destroy;
     operations.access = vv_access;
     operations.chmod = vv_chmod;
     operations.chown = vv_chown;
+    operations.lock = vv_lock;
+    operations.bmap = vv_bmap;
+    operations.ioctl = vv_ioctl;
+    operations.poll = vv_poll;
+    operations.write_buf = vv_write_buf;
+    operations.read_buf = vv_read_buf;
+    operations.flock = vv_flock;
+    operations.fallocate = vv_fallocate;
+    operations.copy_file_range = vv_copy_file_range;
+    operations.lseek = vv_lseek;
 
     auto context = std::make_unique<FuseContext>(*app::config);
-    return fuse_main(argc, argv, &operations, &context->operations);
+    fusePrivateData = &context->operations;
+    const int result = fuse_main(argc, argv, &operations, fusePrivateData);
+    fusePrivateData = nullptr;
+    return result;
 }
 
 } // namespace virtualvaultfs::fuse
